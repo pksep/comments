@@ -3,37 +3,30 @@ package app
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pksep/location_search_server/internal/api"
-	"github.com/pksep/location_search_server/internal/config"
-	examRepoPkg "github.com/pksep/location_search_server/internal/modules/exams/repository"
-	userRepoPkg "github.com/pksep/location_search_server/internal/modules/users/repository"
-	"github.com/pksep/location_search_server/internal/services"
+	"github.com/pksep/comments/internal/api"
+	"github.com/pksep/comments/internal/config"
+	"github.com/pksep/comments/internal/services"
+	commentRepoPkg "github.com/pksep/comments/internal/modules/comments/repository"
 )
 
 func Init(pool *pgxpool.Pool) *gin.Engine {
 
 	// Инициализация репозиториев
-	userRepo := userRepoPkg.NewUserRepo(pool)
-	examRepo := examRepoPkg.NewExamRepo(pool)
-	// projectRepo := repository.NewProjectRepo(pool) // если будет
+	commentRepo := commentRepoPkg.NewCommentRepo(pool)
 
 	// Инициализация сервисов
-	services := services.NewServices(userRepo, examRepo)
+	services := services.NewServices(commentRepo)
 
 	// Инициализация зависимостей для хэндлеров
-	deps := &api.RouterDeps{
-		UserRepo: userRepo,
-		ExamRepo: examRepo,
-		// ProjectRepo: projectRepo,
-	}
+	deps := &api.RouterDeps{}
 
 	// Инициализация Gin
 	r := gin.Default()
 
 	// Swagger
 	swaggerCfg := &config.SwaggerConfig{
-		Title:       "Exam Management API",
-		Description: "API для управления экзаменами",
+		Title:       "Comments API",
+		Description: "Универсальный сервис комментариев",
 		Version:     "1.0.0",
 		Host:        "localhost:5001",
 		BasePath:    "/api",

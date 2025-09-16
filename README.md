@@ -1,6 +1,6 @@
-# Location Search Server
+# Comments
 
-Микросервис для тестирования знаний.
+Микросервис для комментарии.
 
 ## 🚀 Быстрый старт
 
@@ -21,8 +21,8 @@
 
 1. Клонируйте репозиторий:
    ```bash
-   git clone https://github.com/pksep/location_search_server.git
-   cd location_search_server
+   git clone https://github.com/pksep/comments.git
+   cd comments
    ```
 
 2. Настройте переменные окружения:

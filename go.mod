@@ -1,4 +1,4 @@
-module github.com/pksep/location_search_server
+module github.com/pksep/comments
 
 go 1.25.0
 

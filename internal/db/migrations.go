@@ -8,7 +8,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/pksep/location_search_server/internal/config"
+	"github.com/pksep/comments/internal/config"
 )
 
 // ----------------------------------------------------------------------

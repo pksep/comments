@@ -4,9 +4,9 @@ import (
 	"log"
 
 	"github.com/joho/godotenv"
-	"github.com/pksep/location_search_server/internal/app"
-	"github.com/pksep/location_search_server/internal/config"
-	"github.com/pksep/location_search_server/internal/db"
+	"github.com/pksep/comments/internal/app"
+	"github.com/pksep/comments/internal/config"
+	"github.com/pksep/comments/internal/db"
 )
 
 func init() {

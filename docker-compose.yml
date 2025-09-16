@@ -6,7 +6,7 @@ services:
     image: postgres:15-alpine
     container_name: exam_postgres
     environment:
-      POSTGRES_DB: location_search_db
+      POSTGRES_DB: comments_db
       POSTGRES_USER: postgres_location
       POSTGRES_PASSWORD: 5513
     ports:
@@ -17,7 +17,7 @@ services:
       - exam_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d location_search_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d comments_db"]
       interval: 30s
       timeout: 10s
       retries: 5

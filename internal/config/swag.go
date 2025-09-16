@@ -5,7 +5,7 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	"github.com/pksep/location_search_server/internal/api/docs"
+	"github.com/pksep/comments/internal/api/docs"
 )
 
 // SwaggerConfig хранит основные параметры Swagger

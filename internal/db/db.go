@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pksep/location_search_server/internal/config"
+	"github.com/pksep/comments/internal/config"
 )
 
 func NewPostgresPool() (*pgxpool.Pool, error) {
