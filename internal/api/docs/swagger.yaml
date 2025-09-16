@@ -1,0 +1,178 @@
+definitions:
+  dto.CreateUserDTO:
+    properties:
+      initials:
+        type: string
+    required:
+    - initials
+    type: object
+  dto.UpdateUserDTO:
+    properties:
+      initials:
+        type: string
+    required:
+    - initials
+    type: object
+  model.User:
+    description: Пользователь экзаменационной системы
+    properties:
+      created_at:
+        description: |-
+          Дата создания сущности
+          example: 2025-09-11T12:34:56Z
+        type: string
+      id:
+        description: |-
+          ID пользователя
+          example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      initials:
+        description: |-
+          Инициалы пользователя
+          example: AB
+        type: string
+      updated_at:
+        description: |-
+          Дата последнего обновления сущности
+          example: 2025-09-11T12:34:56Z
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /users:
+    get:
+      description: Возвращает всех пользователей
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.User'
+            type: array
+        "500":
+          description: внутренняя ошибка сервера
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Список пользователей
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Создаёт нового пользователя
+      parameters:
+      - description: Пользователь
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateUserDTO'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.User'
+        "400":
+          description: ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: внутренняя ошибка сервера
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Создать пользователя
+      tags:
+      - users
+  /users/{id}:
+    delete:
+      description: Удаляет пользователя по ID
+      parameters:
+      - description: ID пользователя
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "500":
+          description: внутренняя ошибка сервера
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Удалить пользователя
+      tags:
+      - users
+    get:
+      description: Возвращает пользователя по ID
+      parameters:
+      - description: ID пользователя
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.User'
+        "404":
+          description: пользователь не найден
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: внутренняя ошибка сервера
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Получить пользователя
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Обновляет инициалы пользователя по ID
+      parameters:
+      - description: ID пользователя
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Пользователь
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateUserDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.User'
+        "400":
+          description: ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: внутренняя ошибка сервера
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Обновить пользователя
+      tags:
+      - users
+swagger: "2.0"

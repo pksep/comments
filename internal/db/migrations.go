@@ -1,0 +1,52 @@
+package db
+
+import (
+	"log"
+	"path/filepath"
+	"runtime"
+
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/pksep/location_search_server/internal/config"
+)
+
+// ----------------------------------------------------------------------
+// RunMigrations																				  							|
+// ищет папку migrations относительно internal/db и запускает миграции  |
+// ----------------------------------------------------------------------
+func RunMigrations() {
+	cfg := config.GetConfig()
+	dbURL := cfg.DatabaseURL
+
+	// Определяем путь к текущему файлу (migrate.go)
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatal("Не удалось определить путь к текущему файлу")
+	}
+
+	// migrations расположена в корне проекта
+	projectRoot := filepath.Join(filepath.Dir(filename), "..", "..")
+	migrationsPath := filepath.Join(projectRoot, "migrations")
+
+	log.Printf("Применяем миграции из: %s\n", migrationsPath)
+
+	m, err := migrate.New(
+		"file://"+migrationsPath,
+		dbURL,
+	)
+	if err != nil {
+		log.Fatalf("Ошибка при создании миграции: %v", err)
+	}
+
+	err = m.Up()
+	if err != nil {
+		if err == migrate.ErrNoChange {
+			log.Println("Миграции уже применены, изменений нет")
+		} else {
+			log.Fatalf("Ошибка при применении миграций: %v", err)
+		}
+	} else {
+		log.Println("Миграции успешно применены")
+	}
+}
