@@ -4,6 +4,7 @@ import (
 	"log"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -31,8 +32,12 @@ func RunMigrations() {
 
 	log.Printf("Применяем миграции из: %s\n", migrationsPath)
 
+	// Normalize to file URL (cross-OS). On Windows this becomes file:///C:/...
+	slashed := filepath.ToSlash(migrationsPath)
+	sourceURL := "file://" + strings.TrimPrefix(slashed, "/")
+
 	m, err := migrate.New(
-		"file://"+migrationsPath,
+		sourceURL,
 		dbURL,
 	)
 	if err != nil {

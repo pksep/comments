@@ -4,7 +4,7 @@ services:
   # PostgreSQL сервис
   postgres:
     image: postgres:15-alpine
-    container_name: exam_postgres
+    container_name: comments_postgres
     environment:
       POSTGRES_DB: comments_db
       POSTGRES_USER: postgres_location
@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/datad
     networks:
-      - exam_network
+      - comments_network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d comments_db"]
@@ -24,15 +24,14 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: exam_redis
+    container_name: comments_redis
     ports:
       - "5616:6379"  
-    #TODO Здесь нужно будет добавить сохранение на хосет даных
     command: redis-server --save "" --appendonly no
     volumes:
       - redis_data:/data
     networks:
-      - exam_network
+      - comments_network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -47,5 +46,5 @@ volumes:
     driver: local
 
 networks:
-  exam_network:
+  comments_network:
     driver: bridge
