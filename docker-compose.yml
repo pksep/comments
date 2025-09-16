@@ -7,7 +7,7 @@ services:
     container_name: comments_postgres
     environment:
       POSTGRES_DB: comments_db
-      POSTGRES_USER: postgres_location
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 5513
     ports:
       - "5615:5432" 
