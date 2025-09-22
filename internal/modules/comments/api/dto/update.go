@@ -1,7 +1,6 @@
 package dto
 
 type UpdateCommentDTO struct {
-    Content string `json:"content"`
+	ID      string `json:"id" binding:"required"`
+	Content string `json:"content" binding:"required"`
 }
-
-
