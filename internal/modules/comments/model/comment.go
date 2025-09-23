@@ -8,12 +8,10 @@ import (
 // by specifying entity type and entity id.
 type Comment struct {
 	ID              string     `json:"id" db:"id"`
-	EntityType      string     `json:"entity_type" db:"entity_type"`
-	EntityID        string     `json:"entity_id" db:"entity_id"`
 	AuthorID        string     `json:"author_id" db:"author_id"`
 	Content         string     `json:"content" db:"content"`
 	ParentCommentID *string    `json:"parent_comment_id,omitempty" db:"parent_comment_id"`
-	ParentAnswerID  *string    `json:"parent_answer_id,omitempty" db:"answer_comment_id"`
+	AnswerCommentID  *string    `json:"answer_comment_id,omitempty" db:"answer_comment_id"`
 	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
 	Replies         []Comment  `json:"replies,omitempty" db:"-"` // вложенные, не маппится в БД

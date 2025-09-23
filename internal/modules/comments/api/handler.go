@@ -36,12 +36,10 @@ func (h *CommentHandler) Create(c *gin.Context) {
 	}
 
 	created, err := h.service.Create(c, model.Comment{
-		EntityType:      body.EntityType,
-		EntityID:        body.EntityID,
 		AuthorID:        body.AuthorID,
 		Content:         body.Content,
 		ParentCommentID: body.ParentCommentID,
-		ParentAnswerID:  body.ParentAnswerID,
+		AnswerCommentID:  body.AnswerCommentID,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -92,11 +90,15 @@ func (h *CommentHandler) Get(c *gin.Context) {
 }
 
 func (h *CommentHandler) List(c *gin.Context) {
-	ids := c.QueryArray("ids[]")
-	items, err := h.service.ListWithReplies(c, ids, 3) // 3 уровня вложенности
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, items)
+    ids := c.QueryArray("ids[]")
+
+    // тут limit = 3 для реплаев
+    items, err := h.service.ListWithReplies(c, ids, 3)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    c.JSON(http.StatusOK, items)
 }
+
