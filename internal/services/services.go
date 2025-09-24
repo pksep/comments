@@ -2,15 +2,25 @@ package services
 
 import (
 	commentsRepo "github.com/pksep/comments/internal/modules/comments/repository"
-	comments "github.com/pksep/comments/internal/modules/comments/service"
+	threadsRepo "github.com/pksep/comments/internal/modules/threads/repository"
+
+	commentsSvc "github.com/pksep/comments/internal/modules/comments/service"
+	threadsSvc  "github.com/pksep/comments/internal/modules/threads/service"
 )
 
+// Services объединяет все бизнес-сервисы
 type Services struct {
-	CommentService *comments.CommentService
+	CommentService *commentsSvc.CommentService
+	ThreadService  *threadsSvc.ThreadService
 }
 
-func NewServices(commentRepo commentsRepo.CommentRepoInterface) *Services {
+// NewServices конструктор, принимает репозитории и возвращает набор сервисов
+func NewServices(
+	commentRepo commentsRepo.CommentRepoInterface,
+	threadRepo threadsRepo.ThreadRepoInterface,
+) *Services {
 	return &Services{
-		CommentService: comments.NewCommentService(commentRepo),
+		CommentService: commentsSvc.NewCommentService(commentRepo),
+		ThreadService:  threadsSvc.NewThreadService(threadRepo),
 	}
 }

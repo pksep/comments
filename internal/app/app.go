@@ -7,15 +7,17 @@ import (
 	"github.com/pksep/comments/internal/config"
 	"github.com/pksep/comments/internal/services"
 	commentRepoPkg "github.com/pksep/comments/internal/modules/comments/repository"
+	threadRepoPkg "github.com/pksep/comments/internal/modules/threads/repository"
 )
 
 func Init(pool *pgxpool.Pool) *gin.Engine {
 
 	// Инициализация репозиториев
 	commentRepo := commentRepoPkg.NewCommentRepo(pool)
+	threadRepo := threadRepoPkg.NewThreadRepo(pool)
 
 	// Инициализация сервисов
-	services := services.NewServices(commentRepo)
+	services := services.NewServices(commentRepo, threadRepo)
 
 	// Инициализация зависимостей для хэндлеров
 	deps := &api.RouterDeps{}

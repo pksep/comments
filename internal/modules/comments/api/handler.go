@@ -38,7 +38,7 @@ func (h *CommentHandler) Create(c *gin.Context) {
 	created, err := h.service.Create(c, model.Comment{
 		AuthorID:        body.AuthorID,
 		Content:         body.Content,
-		ParentCommentID: body.ParentCommentID,
+		ThreadID:       body.ThreadID,
 		AnswerCommentID:  body.AnswerCommentID,
 	})
 	if err != nil {

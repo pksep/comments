@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"time"
-
+    "sort"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pksep/comments/internal/modules/comments/model"
@@ -28,30 +28,64 @@ func NewCommentRepo(db *pgxpool.Pool) *CommentRepo {
 	return &CommentRepo{db: db}
 }
 
-// Create вставляет новый комментарий
 func (r *CommentRepo) Create(ctx context.Context, comment *model.Comment) (*model.Comment, error) {
-	comment.ID = uuid.New().String()
-	comment.CreatedAt = time.Now()
-	comment.UpdatedAt = time.Now()
+    // 1. Ensure the comment has a ThreadID
+    if comment.ThreadID == nil {
+        threadID := uuid.New().String()
+        // Create a new thread
+        _, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, threadID)
+        if err != nil {
+            return nil, err
+        }
+        comment.ThreadID = &threadID
+    } else {
+        // Optional: check if the thread exists to avoid foreign key violation
+        var exists bool
+        err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM threads WHERE id = $1)`, *comment.ThreadID).Scan(&exists)
+        if err != nil {
+            return nil, err
+        }
+        if !exists {
+            // Create the thread automatically
+            _, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, *comment.ThreadID)
+            if err != nil {
+                return nil, err
+            }
+        }
+    }
 
-	_, err := r.db.Exec(ctx,
-		`INSERT INTO comments
-		 (id, author_id, content, parent_comment_id, answer_comment_id, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		comment.ID, comment.AuthorID,
-		comment.Content, comment.ParentCommentID, comment.AnswerCommentID,
-		comment.CreatedAt, comment.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return comment, nil
+    // 2. Assign ID and timestamps for the comment
+    comment.ID = uuid.New().String()
+    now := time.Now()
+    comment.CreatedAt = now
+    comment.UpdatedAt = now
+
+    // 3. Insert the comment
+    _, err := r.db.Exec(ctx,
+        `INSERT INTO comments
+            (id, author_id, content, thread_id, answer_comment_id, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        comment.ID,
+        comment.AuthorID,
+        comment.Content,
+        comment.ThreadID,
+        comment.AnswerCommentID,
+        comment.CreatedAt,
+        comment.UpdatedAt,
+    )
+    if err != nil {
+        return nil, err
+    }
+
+    return comment, nil
 }
+
+
 
 // GetByID возвращает комментарий по ID
 func (r *CommentRepo) GetByID(ctx context.Context, id string) (*model.Comment, error) {
 	row := r.db.QueryRow(ctx,
-		`SELECT id, author_id, content, parent_comment_id, answer_comment_id, created_at, updated_at
+		`SELECT id, author_id, content, thread_id, answer_comment_id, created_at, updated_at
 		   FROM comments WHERE id=$1`,
 		id,
 	)
@@ -59,7 +93,7 @@ func (r *CommentRepo) GetByID(ctx context.Context, id string) (*model.Comment, e
 	c := &model.Comment{}
 	if err := row.Scan(
 		&c.ID, &c.AuthorID, &c.Content,
-		&c.ParentCommentID, &c.AnswerCommentID, &c.CreatedAt, &c.UpdatedAt,
+		&c.ThreadID, &c.AnswerCommentID, &c.CreatedAt, &c.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -84,67 +118,59 @@ func (r *CommentRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM comments WHERE id=$1`, id)
 	return err
 }
-
-// ListWithReplies возвращает root-комменты с replyLimit последних реплаев для каждого
-func (r *CommentRepo) ListWithReplies(ctx context.Context, ids []string, replyLimit int) ([]model.Comment, error) {
-	// 1. Достаем root-комменты
-	query := `
-        SELECT id, author_id, content,
-               parent_comment_id, answer_comment_id, created_at, updated_at
-          FROM comments
-         WHERE parent_comment_id IS NULL
-    `
-	args := []any{}
-	if len(ids) > 0 {
-		query += " AND id = ANY($1)"
-		args = append(args, ids)
+func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, replyLimit int) ([]model.Comment, error) {
+	if len(threadIDs) == 0 {
+		return nil, nil
 	}
-	query += " ORDER BY created_at ASC"
 
-	rows, err := r.db.Query(ctx, query, args...)
+	query := `
+        SELECT id, author_id, content, thread_id, created_at, updated_at
+        FROM comments
+        WHERE thread_id = ANY($1)
+        ORDER BY created_at ASC
+    `
+	rows, err := r.db.Query(ctx, query, threadIDs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var roots []model.Comment
+	threadComments := make(map[string][]model.Comment)
+
 	for rows.Next() {
 		var c model.Comment
-		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Content,
-			&c.ParentCommentID, &c.AnswerCommentID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Content, &c.ThreadID, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		c.Replies = []model.Comment{}
-		roots = append(roots, c)
+		if c.ThreadID != nil {
+			threadComments[*c.ThreadID] = append(threadComments[*c.ThreadID], c)
+		}
 	}
 
-	// 2. Для каждого root достаем replyLimit реплаев
-	for i := range roots {
-		replyRows, err := r.db.Query(ctx,
-			`SELECT id, author_id, content,
-                    parent_comment_id, answer_comment_id, created_at, updated_at
-               FROM comments
-              WHERE parent_comment_id = $1
-              ORDER BY created_at DESC
-              LIMIT $2`,
-			roots[i].ID, replyLimit,
-		)
-		if err != nil {
-			return nil, err
+	var result []model.Comment
+
+	for _, comments := range threadComments {
+		if len(comments) == 0 {
+			continue
 		}
 
-		for replyRows.Next() {
-			var rply model.Comment
-			if err := replyRows.Scan(&rply.ID, &rply.AuthorID, &rply.Content,
-				&rply.ParentCommentID, &rply.AnswerCommentID, &rply.CreatedAt, &rply.UpdatedAt); err != nil {
-				replyRows.Close()
-				return nil, err
-			}
-			rply.Replies = []model.Comment{}
-			roots[i].Replies = append(roots[i].Replies, rply)
+		root := comments[0] // oldest comment
+
+		// Take last replyLimit comments as replies (newest ones)
+		start := len(comments) - replyLimit
+		if start < 1 {
+			start = 1
 		}
-		replyRows.Close()
+		root.Replies = comments[start:]
+
+		result = append(result, root)
 	}
 
-	return roots, nil
+	// Sort root comments by CreatedAt DESC (newest threads first)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+
+	return result, nil
 }

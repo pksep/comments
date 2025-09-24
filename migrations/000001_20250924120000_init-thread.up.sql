@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS threads (
+    id UUID PRIMARY KEY
+);
