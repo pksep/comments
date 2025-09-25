@@ -266,12 +266,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "",
-	Host:             "",
-	BasePath:         "",
-	Schemes:          []string{},
-	Title:            "",
-	Description:      "",
+    Version:          "1.0.0",
+    Host:             "localhost:5001",
+    BasePath:         "/api",
+    Schemes:          []string{"http"},
+    Title:            "Comments API",
+    Description:      "Универсальный сервис комментариев. Позволяет добавлять, редактировать, удалять и просматривать комментарии, а также поддерживает древовидные треды и ответы.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

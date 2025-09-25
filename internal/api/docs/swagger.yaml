@@ -38,7 +38,13 @@ definitions:
         type: string
     type: object
 info:
-  contact: {}
+  title: Comments API
+  description: Универсальный сервис комментариев. Позволяет добавлять, редактировать, удалять и просматривать комментарии, а также поддерживает древовидные треды и ответы.
+  version: "1.0.0"
+  contact:
+    name: Comments API Team
+    email: support@example.com
+    url: https://github.com/pksep/comments
 paths:
   /users:
     get:
