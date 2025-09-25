@@ -23,7 +23,7 @@ func (h *CommentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		comments.POST("/create", h.Create)
 		comments.POST("/update", h.Update)   // id будет в теле
 		comments.POST("/delete", h.Delete)   // id будет в теле
-		comments.GET("/:id", h.Get)
+		comments.GET("/by-thread/:threadId", h.Get)
 		comments.GET("/list", h.List)        // ids[]=id1&ids[]=id2
 	}
 }
@@ -80,8 +80,8 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 }
 
 func (h *CommentHandler) Get(c *gin.Context) {
-	id := c.Param("id")
-	item, err := h.service.GetByID(c, id)
+	threadId := c.Param("threadId")
+	item, err := h.service.GetByID(c, threadId)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

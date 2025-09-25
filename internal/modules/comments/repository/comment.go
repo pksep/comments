@@ -12,7 +12,7 @@ import (
 // CommentRepoInterface описывает методы работы с комментариями
 type CommentRepoInterface interface {
 	Create(ctx context.Context, comment *model.Comment) (*model.Comment, error)
-	GetByID(ctx context.Context, id string) (*model.Comment, error)
+	GetByID(ctx context.Context, threadId string) (*model.Comment, error)
 	Update(ctx context.Context, comment *model.Comment) (*model.Comment, error)
 	Delete(ctx context.Context, id string) error
 	ListWithReplies(ctx context.Context, ids []string, replyLimit int) ([]model.Comment, error)
@@ -82,22 +82,45 @@ func (r *CommentRepo) Create(ctx context.Context, comment *model.Comment) (*mode
 
 
 
-// GetByID возвращает комментарий по ID
-func (r *CommentRepo) GetByID(ctx context.Context, id string) (*model.Comment, error) {
-	row := r.db.QueryRow(ctx,
-		`SELECT id, author_id, content, thread_id, answer_comment_id, created_at, updated_at
-		   FROM comments WHERE id=$1`,
-		id,
-	)
-
-	c := &model.Comment{}
-	if err := row.Scan(
-		&c.ID, &c.AuthorID, &c.Content,
-		&c.ThreadID, &c.AnswerCommentID, &c.CreatedAt, &c.UpdatedAt,
-	); err != nil {
+// GetByID возвращает комментарий по thread_id
+func (r *CommentRepo) GetByID(ctx context.Context, threadID string) (*model.Comment, error) {
+	query := `
+        SELECT id, author_id, content, thread_id, created_at, updated_at
+        FROM comments
+        WHERE thread_id = $1
+        ORDER BY created_at ASC
+    `
+	rows, err := r.db.Query(ctx, query, threadID)
+	if err != nil {
 		return nil, err
 	}
-	return c, nil
+	defer rows.Close()
+
+	var comments []model.Comment
+	for rows.Next() {
+		var c model.Comment
+		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Content, &c.ThreadID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, err
+		}
+		c.Replies = []model.Comment{}
+		c.RepliesCount = 0 // initialize
+		comments = append(comments, c)
+	}
+
+	if len(comments) == 0 {
+		return nil, nil // no comments for this thread
+	}
+
+	// First one (oldest) is root
+	root := comments[0]
+
+	// Replies are everything after the root
+	if len(comments) > 1 {
+		root.Replies = comments[1:]
+		root.RepliesCount = len(comments) - 1
+	}
+
+	return &root, nil
 }
 
 // Update обновляет комментарий
@@ -151,21 +174,26 @@ func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, r
 	var result []model.Comment
 
 	for _, comments := range threadComments {
-		if len(comments) == 0 {
-			continue
-		}
+    	if len(comments) == 0 {
+    		continue
+    	}
 
-		root := comments[0] // oldest comment
+    	// Oldest comment is root
+    	root := comments[0]
 
-		// Take last replyLimit comments as replies (newest ones)
-		start := len(comments) - replyLimit
-		if start < 1 {
-			start = 1
-		}
-		root.Replies = comments[start:]
+    	// Count all replies (excluding root)
+    	root.RepliesCount = len(comments) - 1
 
-		result = append(result, root)
-	}
+    	// Take oldest N replies
+    	end := replyLimit + 1 // +1 to skip root
+    	if end > len(comments) {
+    		end = len(comments)
+    	}
+    	root.Replies = comments[1:end]
+
+    	result = append(result, root)
+    }
+
 
 	// Sort root comments by CreatedAt DESC (newest threads first)
 	sort.Slice(result, func(i, j int) bool {

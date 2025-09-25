@@ -21,14 +21,14 @@ func (s *CommentService) Create(ctx context.Context, c model.Comment) (*model.Co
 	return s.repo.Create(ctx, &c)
 }
 
-// GetByID возвращает комментарий по ID
-func (s *CommentService) GetByID(ctx context.Context, id string) (*model.Comment, error) {
-	return s.repo.GetByID(ctx, id)
+// GetByID возвращает комментарий по threadId
+func (s *CommentService) GetByID(ctx context.Context, threadId string) (*model.Comment, error) {
+	return s.repo.GetByID(ctx, threadId)
 }
 
 // UpdateContent обновляет контент комментария
-func (s *CommentService) UpdateContent(ctx context.Context, id string, content string) (*model.Comment, error) {
-	c, err := s.repo.GetByID(ctx, id)
+func (s *CommentService) UpdateContent(ctx context.Context, threadId string, content string) (*model.Comment, error) {
+	c, err := s.repo.GetByID(ctx, threadId)
 	if err != nil {
 		return nil, err
 	}

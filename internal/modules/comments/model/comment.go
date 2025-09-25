@@ -14,5 +14,6 @@ type Comment struct {
 	AnswerCommentID *string    `json:"answer_comment_id,omitempty" db:"answer_comment_id"`
 	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
-	Replies         []Comment  `json:"replies" db:"-"` // вложенные, не маппится в БД
+	Replies         []Comment  `json:"replies" db:"-"`
+	RepliesCount    int        `json:"replies_count" db:"-"`
 }
