@@ -5,9 +5,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pksep/comments/internal/api"
 	"github.com/pksep/comments/internal/config"
-	"github.com/pksep/comments/internal/services"
 	commentRepoPkg "github.com/pksep/comments/internal/modules/comments/repository"
 	threadRepoPkg "github.com/pksep/comments/internal/modules/threads/repository"
+	"github.com/pksep/comments/internal/services"
 )
 
 func Init(pool *pgxpool.Pool) *gin.Engine {
@@ -36,8 +36,7 @@ func Init(pool *pgxpool.Pool) *gin.Engine {
 	}
 	r.GET("/swagger/*any", config.GetSwaggerHandler(swaggerCfg))
 
-	// Подключаем WS-модуль
-	config.RegisterRoutes(r)
+	// ...existing code...
 
 	// Регистрация всех API маршрутов
 	api.RegisterRoutes(r, deps, services)
