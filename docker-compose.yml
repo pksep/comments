@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 5513
     ports:
-      - "5615:5432" 
+      - "5617:5432" 
     volumes:
       - postgres_data:/var/lib/postgresql/datad
     networks:
@@ -26,7 +26,7 @@ services:
     image: redis:7-alpine
     container_name: comments_redis
     ports:
-      - "5616:6379"  
+      - "5618:6379"  
     command: redis-server --save "" --appendonly no
     volumes:
       - redis_data:/data
