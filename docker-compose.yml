@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL сервис
@@ -19,6 +19,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    ports:
+      - "5617:5432"
 
   redis:
     image: redis:7-alpine
@@ -34,6 +36,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    ports:
+      - "5618:6379"
 
   comments:
     build: .
