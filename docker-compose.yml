@@ -9,8 +9,6 @@ services:
       POSTGRES_DB: comments_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 5513
-    ports:
-      - "5617:5432" 
     volumes:
       - postgres_data:/var/lib/postgresql/datad
     networks:
@@ -25,8 +23,6 @@ services:
   redis:
     image: redis:7-alpine
     container_name: comments_redis
-    ports:
-      - "5618:6379"  
     command: redis-server --save "" --appendonly no
     volumes:
       - redis_data:/data
@@ -39,6 +35,22 @@ services:
       timeout: 10s
       retries: 5
 
+  comments:
+    build: .
+    command: ./server
+    environment:
+      - DATABASE_URL=postgres://postgres:5513@postgres:5432/comments_db?sslmode=disable
+      - PORT=5001
+    container_name: comments
+    ports:
+      - "5002:5001"
+    networks:
+      - comments_network
+    volumes:
+      - ./migrations:/app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
 volumes:
   postgres_data:
     driver: local

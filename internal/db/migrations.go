@@ -34,7 +34,12 @@ func RunMigrations() {
 
 	// Normalize to file URL (cross-OS). On Windows this becomes file:///C:/...
 	slashed := filepath.ToSlash(migrationsPath)
-	sourceURL := "file://" + strings.TrimPrefix(slashed, "/")
+	var sourceURL string
+	if runtime.GOOS == "windows" {
+		sourceURL = "file://" + strings.TrimPrefix(slashed, "/")
+	} else {
+		sourceURL = "file:///" + strings.TrimPrefix(slashed, "/")
+	}
 
 	m, err := migrate.New(
 		sourceURL,
