@@ -29,58 +29,56 @@ func NewCommentRepo(db *pgxpool.Pool) *CommentRepo {
 }
 
 func (r *CommentRepo) Create(ctx context.Context, comment *model.Comment) (*model.Comment, error) {
-    // 1. Ensure the comment has a ThreadID
-    if comment.ThreadID == nil {
-        threadID := uuid.New().String()
-        // Create a new thread
-        _, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, threadID)
-        if err != nil {
-            return nil, err
-        }
-        comment.ThreadID = &threadID
-    } else {
-        // Optional: check if the thread exists to avoid foreign key violation
-        var exists bool
-        err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM threads WHERE id = $1)`, *comment.ThreadID).Scan(&exists)
-        if err != nil {
-            return nil, err
-        }
-        if !exists {
-            // Create the thread automatically
-            _, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, *comment.ThreadID)
-            if err != nil {
-                return nil, err
-            }
-        }
-    }
+	// 1. Ensure the comment has a ThreadID
+	if comment.ThreadID == nil {
+		threadID := uuid.New().String()
+		// Create a new thread
+		_, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, threadID)
+		if err != nil {
+			return nil, err
+		}
+		comment.ThreadID = &threadID
+	} else {
+		// Optional: check if the thread exists to avoid foreign key violation
+		var exists bool
+		err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM threads WHERE id = $1)`, *comment.ThreadID).Scan(&exists)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			// Create the thread automatically
+			_, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, *comment.ThreadID)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 
-    // 2. Assign ID and timestamps for the comment
-    comment.ID = uuid.New().String()
-    now := time.Now()
-    comment.CreatedAt = now
-    comment.UpdatedAt = now
+	// 2. Assign ID and timestamps for the comment
+	comment.ID = uuid.New().String()
+	now := time.Now()
+	comment.CreatedAt = now
+	comment.UpdatedAt = now
 
-    // 3. Insert the comment
-    _, err := r.db.Exec(ctx,
-        `INSERT INTO comments
+	// 3. Insert the comment
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO comments
             (id, author_id, content, thread_id, answer_comment_id, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        comment.ID,
-        comment.AuthorID,
-        comment.Content,
-        comment.ThreadID,
-        comment.AnswerCommentID,
-        comment.CreatedAt,
-        comment.UpdatedAt,
-    )
-    if err != nil {
-        return nil, err
-    }
+		comment.ID,
+		comment.AuthorID,
+		comment.Content,
+		comment.ThreadID,
+		comment.AnswerCommentID,
+		comment.CreatedAt,
+		comment.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
 
-    return comment, nil
+	return comment, nil
 }
-
-
 
 // GetByID возвращает комментарий по thread_id
 func (r *CommentRepo) GetByID(ctx context.Context, threadID string) (*model.Comment, error) {
@@ -174,28 +172,28 @@ func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, r
 	var result []model.Comment
 
 	for _, comments := range threadComments {
-    	if len(comments) == 0 {
-    		continue
-    	}
+		if len(comments) == 0 {
+			continue
+		}
 
-    	// Oldest comment is root
-    	root := comments[0]
+		root := comments[0]
 
-    	// Count all replies (excluding root)
-    	root.RepliesCount = len(comments) - 1
+		totalReplies := len(comments) - 1
+		root.RepliesCount = totalReplies
 
-    	// Take oldest N replies
-    	end := replyLimit + 1 // +1 to skip root
-    	if end > len(comments) {
-    		end = len(comments)
-    	}
-    	root.Replies = comments[1:end]
+		if replyLimit <= 0 || totalReplies <= 0 {
+			root.Replies = []model.Comment{}
+		} else {
+			start := len(comments) - replyLimit
+			if start < 1 {
+				start = 1
+			}
+			root.Replies = comments[start:]
+		}
 
-    	result = append(result, root)
-    }
+		result = append(result, root)
+	}
 
-
-	// Sort root comments by CreatedAt DESC (newest threads first)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
