@@ -2,8 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"sort"
 	"time"
-    "sort"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pksep/comments/internal/modules/comments/model"
@@ -13,8 +17,8 @@ import (
 type CommentRepoInterface interface {
 	Create(ctx context.Context, comment *model.Comment) (*model.Comment, error)
 	GetByID(ctx context.Context, threadId string) (*model.Comment, error)
-	Update(ctx context.Context, comment *model.Comment) (*model.Comment, error)
-	Delete(ctx context.Context, id string) error
+	Update(ctx context.Context, id string, content string, authorId string) (*model.Comment, error)
+	Delete(ctx context.Context, id string, authorId string) (*model.Comment, error)
 	ListWithReplies(ctx context.Context, ids []string, replyLimit int) ([]model.Comment, error)
 }
 
@@ -85,7 +89,7 @@ func (r *CommentRepo) GetByID(ctx context.Context, threadID string) (*model.Comm
 	query := `
         SELECT id, author_id, content, thread_id, created_at, updated_at
         FROM comments
-        WHERE thread_id = $1
+        WHERE thread_id = $1 AND deleted_at IS NULL
         ORDER BY created_at ASC
     `
 	rows, err := r.db.Query(ctx, query, threadID)
@@ -122,23 +126,154 @@ func (r *CommentRepo) GetByID(ctx context.Context, threadID string) (*model.Comm
 }
 
 // Update обновляет комментарий
-func (r *CommentRepo) Update(ctx context.Context, comment *model.Comment) (*model.Comment, error) {
-	comment.UpdatedAt = time.Now()
-	_, err := r.db.Exec(ctx,
-		`UPDATE comments SET content=$1, updated_at=$2 WHERE id=$3`,
-		comment.Content, comment.UpdatedAt, comment.ID,
+func (r *CommentRepo) Update(ctx context.Context, id string, content string, authorId string) (*model.Comment, error) {
+	// Проверяем существование комментария и авторство
+	var dbAuthor string
+	err := r.db.QueryRow(ctx, `
+        SELECT author_id 
+        FROM comments 
+        WHERE id = $1
+    `, id).Scan(&dbAuthor)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("comment with ID %s not found", id)
+		}
+		return nil, err
+	}
+
+	if dbAuthor != authorId {
+		return nil, fmt.Errorf("only the author can edit this comment")
+	}
+
+	// Обновляем только content и сразу возвращаем полный комментарий
+	updatedComment := &model.Comment{}
+	err = r.db.QueryRow(ctx, `
+        UPDATE comments
+        SET content = $1, status = $2, updated_at = $3
+        WHERE id = $4
+        RETURNING id, content, author_id, status, thread_id, created_at, updated_at
+    `, content, model.CommentStatusEdited, time.Now(), id).Scan(
+		&updatedComment.ID,
+		&updatedComment.Content,
+		&updatedComment.AuthorID,
+		&updatedComment.Status,
+		&updatedComment.ThreadID,
+		&updatedComment.CreatedAt,
+		&updatedComment.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return comment, nil
+
+	return updatedComment, nil
 }
 
-// Delete удаляет комментарий
-func (r *CommentRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM comments WHERE id=$1`, id)
-	return err
+// Delete удаляет комментарий и возвращает его после удаления
+func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*model.Comment, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var dbAuthor string
+	var threadID *string
+	err = tx.QueryRow(ctx, `
+		SELECT author_id, thread_id 
+		FROM comments 
+		WHERE id = $1
+	`, id).Scan(&dbAuthor, &threadID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Default: only the author can delete
+	allowed := dbAuthor == authorId
+
+	// If the comment belongs to a thread, allow also thread's first author
+	if !allowed && threadID != nil {
+		var threadAuthor string
+		err = tx.QueryRow(ctx, `
+			SELECT author_id
+			FROM comments
+			WHERE thread_id = $1
+			ORDER BY created_at ASC
+			LIMIT 1
+		`, *threadID).Scan(&threadAuthor)
+		if err != nil {
+			return nil, err
+		}
+		if threadAuthor == authorId {
+			allowed = true
+		}
+	}
+
+	if !allowed {
+		return nil, errors.New("only the comment author or thread author can delete this comment")
+	}
+
+	// Mark comment as deleted
+	_, err = tx.Exec(ctx, `
+		UPDATE comments
+		SET deleted_at = NOW(), status = 'deleted', updated_at = NOW()
+		WHERE id = $1
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// If deleting first comment in thread — mark all as deleted
+	if threadID != nil {
+		var firstCommentID string
+		err = tx.QueryRow(ctx, `
+			SELECT id FROM comments
+			WHERE thread_id = $1
+			ORDER BY created_at ASC
+			LIMIT 1
+		`, *threadID).Scan(&firstCommentID)
+		if err != nil {
+			return nil, err
+		}
+
+		if firstCommentID == id {
+			_, err = tx.Exec(ctx, `
+				UPDATE comments
+				SET deleted_at = NOW(), status = 'deleted', updated_at = NOW()
+				WHERE thread_id = $1
+			`, *threadID)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Return updated comment
+	var deletedComment model.Comment
+	err = tx.QueryRow(ctx, `
+		SELECT id, thread_id, content, author_id, status, created_at, updated_at
+		FROM comments
+		WHERE id = $1
+	`, id).Scan(
+		&deletedComment.ID,
+		&deletedComment.ThreadID,
+		&deletedComment.Content,
+		&deletedComment.AuthorID,
+		&deletedComment.Status,
+		&deletedComment.CreatedAt,
+		&deletedComment.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &deletedComment, nil
 }
+
 func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, replyLimit int) ([]model.Comment, error) {
 	if len(threadIDs) == 0 {
 		return nil, nil
@@ -147,7 +282,7 @@ func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, r
 	query := `
         SELECT id, author_id, content, thread_id, created_at, updated_at
         FROM comments
-        WHERE thread_id = ANY($1)
+        WHERE thread_id = ANY($1) AND deleted_at IS NULL
         ORDER BY created_at ASC
     `
 	rows, err := r.db.Query(ctx, query, threadIDs)
