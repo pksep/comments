@@ -25,4 +25,5 @@ type Comment struct {
 	UpdatedAt       time.Time     `json:"updated_at" db:"updated_at"`
 	Replies         []Comment     `json:"replies" db:"-"`
 	RepliesCount    int           `json:"replies_count" db:"-"`
+	IsFirstComment  bool          `json:"is_first_comment" db:"-"`
 }

@@ -188,10 +188,9 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		return nil, err
 	}
 
-	// Default: only the author can delete
 	allowed := dbAuthor == authorId
+	isFirstComment := false
 
-	// If the comment belongs to a thread, allow also thread's first author
 	if !allowed && threadID != nil {
 		var threadAuthor string
 		err = tx.QueryRow(ctx, `
@@ -213,7 +212,6 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		return nil, errors.New("only the comment author or thread author can delete this comment")
 	}
 
-	// Mark comment as deleted
 	_, err = tx.Exec(ctx, `
 		UPDATE comments
 		SET deleted_at = NOW(), status = 'deleted', updated_at = NOW()
@@ -223,7 +221,6 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		return nil, err
 	}
 
-	// If deleting first comment in thread — mark all as deleted
 	if threadID != nil {
 		var firstCommentID string
 		err = tx.QueryRow(ctx, `
@@ -237,6 +234,7 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		}
 
 		if firstCommentID == id {
+			isFirstComment = true
 			_, err = tx.Exec(ctx, `
 				UPDATE comments
 				SET deleted_at = NOW(), status = 'deleted', updated_at = NOW()
@@ -248,7 +246,6 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		}
 	}
 
-	// Return updated comment
 	var deletedComment model.Comment
 	err = tx.QueryRow(ctx, `
 		SELECT id, thread_id, content, author_id, status, created_at, updated_at
@@ -270,6 +267,8 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+
+	deletedComment.IsFirstComment = isFirstComment
 
 	return &deletedComment, nil
 }
