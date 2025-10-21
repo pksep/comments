@@ -27,18 +27,13 @@ func (s *CommentService) GetByID(ctx context.Context, threadId string) (*model.C
 }
 
 // UpdateContent обновляет контент комментария
-func (s *CommentService) UpdateContent(ctx context.Context, threadId string, content string) (*model.Comment, error) {
-	c, err := s.repo.GetByID(ctx, threadId)
-	if err != nil {
-		return nil, err
-	}
-	c.Content = content
-	return s.repo.Update(ctx, c)
+func (s *CommentService) UpdateContent(ctx context.Context, id string, content string, authorId string) (*model.Comment, error) {
+	return s.repo.Update(ctx, id, content, authorId)
 }
 
 // Delete удаляет комментарий
-func (s *CommentService) Delete(ctx context.Context, id string) error {
-	return s.repo.Delete(ctx, id)
+func (s *CommentService) Delete(ctx context.Context, id string, authorId string) (*model.Comment, error) {
+	return s.repo.Delete(ctx, id, authorId)
 }
 
 // ListWithReplies возвращает root-комменты с ограничением replyLimit реплаев

@@ -23,7 +23,7 @@ func (h *CommentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	{
 		comments.POST("/create", h.Create)
 		comments.POST("/update", h.Update) // id будет в теле
-		comments.POST("/delete", h.Delete) // id будет в теле
+		comments.POST("/delete", h.Delete) // id, author_id будет в теле
 		comments.GET("/by-thread/:threadId", h.Get)
 		comments.GET("/list", h.List) // ids[]=id1&ids[]=id2
 	}
@@ -56,7 +56,7 @@ func (h *CommentHandler) Update(c *gin.Context) {
 		return
 	}
 
-	updated, err := h.service.UpdateContent(c, body.ID, body.Content)
+	updated, err := h.service.UpdateContent(c, body.ID, body.Content, body.AuthorID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -65,19 +65,23 @@ func (h *CommentHandler) Update(c *gin.Context) {
 }
 
 func (h *CommentHandler) Delete(c *gin.Context) {
-	var body struct {
-		ID string `json:"id" binding:"required"`
-	}
+	var body dto.DeleteCommentDTO
+
+	// Проверяем входные данные
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := h.service.Delete(c, body.ID); err != nil {
+	// Удаляем комментарий
+	deletedComment, err := h.service.Delete(c, body.ID, body.AuthorID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.Status(http.StatusNoContent)
+
+	// Возвращаем удалённый комментарий
+	c.JSON(http.StatusOK, deletedComment)
 }
 
 func (h *CommentHandler) Get(c *gin.Context) {

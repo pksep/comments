@@ -1,0 +1,7 @@
+ALTER TABLE comments
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL,
+ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'created';
+
+UPDATE comments
+SET status = 'created'
+WHERE status IS NULL;
