@@ -5,10 +5,10 @@ WORKDIR /app
 # Кэшируем зависимости
 COPY go.mod go.sum ./
 RUN go mod download
-
+ARG ENV_FILE=.env
 # Копируем исходники
 COPY . .
-
+COPY ${ENV_FILE} ./.env
 # Устанавливаем air для hot reload (если нужно в dev)
 RUN go install github.com/air-verse/air@latest
 
