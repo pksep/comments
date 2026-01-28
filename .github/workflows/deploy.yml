@@ -24,4 +24,4 @@ jobs:
                 script: |
                     cd ~/erp_k8s/erp_k8s && \
                     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
-                    env "APP=comments" "BRANCH=main" bun utils.ts switch-branch
+                    env "APP=comments" "BRANCH=main" "MODE=prod" bun utils.ts switch-branch
