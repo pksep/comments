@@ -4,7 +4,6 @@ on:
     push:
         branches:
             - main
-            - canary
 
 jobs:
     deploy:
@@ -24,4 +23,22 @@ jobs:
                 script: |
                     cd ~/erp_k8s/erp_k8s && \
                     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
-                    env "APP=comments" "BRANCH=main" "MODE=prod" bun utils.ts switch-branch
+                    
+                    if env "APP=comments" "BRANCH=${{ github.ref_name }}" "MODE=prod" bun utils.ts switch-branch; then
+                      STATUS="Success"
+                    else
+                      STATUS="Failed"
+                    fi
+
+                    END_TIME=$(date +'%H:%M:%S')
+
+                    curl -X POST http://localhost:30012/notify \
+                      -H "Content-Type: application/json" \
+                      -d "{
+                        \"service\": \"comments\",
+                        \"status\": \"$STATUS\",
+                        \"branch\": \"${{ github.ref_name }}\",
+                        \"time\": \"$END_TIME\",
+                        \"env\": \"DEV\",
+                        \"actionUrl\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                      }"
