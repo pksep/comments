@@ -1,0 +1,27 @@
+name: Remote Dispath Deploy
+
+on:
+    push:
+        branches:
+            - main
+            - canary
+
+jobs:
+    deploy:
+        runs-on: ubuntu-22.04
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Executing ssh deploy command
+              uses: appleboy/ssh-action@v1.0.3
+              with:
+                host: ${{ secrets.DEV_SSH_HOST }}
+                username: ${{ secrets.DEV_SSH_USER }}
+                key: ${{ secrets.DEV_SSH_KEY }}
+                port: ${{ secrets.DEV_SSH_PORT }}
+                script: |
+                    cd ~/erp_k8s/erp_k8s && \
+                    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+                    env "APP=comments" "BRANCH=main" bun utils.ts switch-branch
