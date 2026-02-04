@@ -57,3 +57,12 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, response)
 	}
 }
+
+func (h *HealthHandler) Health(c *gin.Context) {
+	response := HealthResponse{
+		Status:    "healthy",
+		Timestamp: time.Now(),
+		Services:  map[string]string{"server": "running"},
+	}
+	c.JSON(http.StatusOK, response)
+}

@@ -11,8 +11,9 @@ type RouterDeps struct {
 }
 
 func RegisterRoutes(r *gin.Engine, deps *RouterDeps, services *services.Services, dbPool *pgxpool.Pool) {
-	// Health check endpoint
+	// Health check endpoints
 	healthHandler := NewHealthHandler(dbPool)
+	r.GET("/health", healthHandler.Health)
 	r.GET("/ready", healthHandler.Ready)
 
 	api := r.Group("/api")
