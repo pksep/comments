@@ -39,7 +39,7 @@ func Init(pool *pgxpool.Pool) *gin.Engine {
 	// ...existing code...
 
 	// Регистрация всех API маршрутов
-	api.RegisterRoutes(r, deps, services)
+	api.RegisterRoutes(r, deps, services, pool)
 
 	return r
 }
