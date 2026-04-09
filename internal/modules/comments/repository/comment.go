@@ -6,74 +6,187 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pksep/comments/internal/config"
 	"github.com/pksep/comments/internal/modules/comments/model"
 )
 
-// CommentRepoInterface описывает методы работы с комментариями
 type CommentRepoInterface interface {
 	Create(ctx context.Context, comment *model.Comment) (*model.Comment, error)
 	GetByID(ctx context.Context, threadId string) (*model.Comment, error)
 	Update(ctx context.Context, id string, content string, authorId string) (*model.Comment, error)
 	Delete(ctx context.Context, id string, authorId string) (*model.Comment, error)
+	SetPinned(ctx context.Context, id string, authorId string, isPinned bool) (*model.Comment, error)
 	ListWithReplies(ctx context.Context, ids []string, replyLimit int) ([]model.Comment, error)
 }
 
-// CommentRepo — реализация репозитория комментариев
 type CommentRepo struct {
-	db *pgxpool.Pool
+	db              *pgxpool.Pool
+	minioPublicURL  string
+	minioBucketName string
 }
 
-// NewCommentRepo создаёт новый репозиторий
+type dbExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 func NewCommentRepo(db *pgxpool.Pool) *CommentRepo {
-	return &CommentRepo{db: db}
+	cfg := config.GetConfig()
+
+	return &CommentRepo{
+		db:              db,
+		minioPublicURL:  strings.TrimRight(cfg.MinioPublicBaseURL, "/"),
+		minioBucketName: strings.Trim(cfg.MinioBucketName, "/"),
+	}
+}
+
+func (r *CommentRepo) buildMediaURL(objectName string) string {
+	if objectName == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("%s/%s/%s", r.minioPublicURL, r.minioBucketName, objectName)
+}
+
+func (r *CommentRepo) saveMedia(ctx context.Context, executor dbExecutor, commentID string, documents []model.CommentMedia) error {
+	for index := range documents {
+		document := documents[index]
+		if document.Type == "" {
+			document.Type = "file"
+		}
+
+		var createdAt time.Time
+		var updatedAt time.Time
+		err := executor.QueryRow(ctx, `
+			INSERT INTO comment_media
+				(comment_id, name, original_name, type, size, created_at, updated_at)
+			VALUES
+				($1, $2, $3, $4, $5, NOW(), NOW())
+			RETURNING id, created_at, updated_at
+		`,
+			commentID,
+			document.Name,
+			document.OriginalName,
+			document.Type,
+			document.Size,
+		).Scan(&documents[index].ID, &createdAt, &updatedAt)
+		if err != nil {
+			return err
+		}
+
+		documents[index].Type = document.Type
+		documents[index].Path = r.buildMediaURL(document.Name)
+		documents[index].CreatedAt = &createdAt
+		documents[index].UpdatedAt = &updatedAt
+	}
+
+	return nil
+}
+
+func (r *CommentRepo) loadMediaMap(ctx context.Context, commentIDs []string) (map[string][]model.CommentMedia, error) {
+	result := make(map[string][]model.CommentMedia)
+	if len(commentIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT comment_id, id, name, original_name, type, size, created_at, updated_at
+		FROM comment_media
+		WHERE comment_id = ANY($1)
+		ORDER BY id ASC
+	`, commentIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var commentID string
+		var document model.CommentMedia
+		if err := rows.Scan(
+			&commentID,
+			&document.ID,
+			&document.Name,
+			&document.OriginalName,
+			&document.Type,
+			&document.Size,
+			&document.CreatedAt,
+			&document.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		document.Path = r.buildMediaURL(document.Name)
+		result[commentID] = append(result[commentID], document)
+	}
+
+	return result, rows.Err()
+}
+
+func collectCommentIDs(comments []model.Comment) []string {
+	ids := make([]string, 0, len(comments))
+	for _, comment := range comments {
+		ids = append(ids, comment.ID)
+	}
+	return ids
+}
+
+func assignMediaToComments(comments []model.Comment, mediaMap map[string][]model.CommentMedia) []model.Comment {
+	for index := range comments {
+		comments[index].Documents = mediaMap[comments[index].ID]
+	}
+	return comments
 }
 
 func (r *CommentRepo) Create(ctx context.Context, comment *model.Comment) (*model.Comment, error) {
-	// 1. Ensure the comment has a ThreadID
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
 	if comment.ThreadID == nil {
 		threadID := uuid.New().String()
-		// Create a new thread
-		_, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, threadID)
-		if err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, threadID); err != nil {
 			return nil, err
 		}
 		comment.ThreadID = &threadID
 	} else {
-		// Optional: check if the thread exists to avoid foreign key violation
 		var exists bool
-		err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM threads WHERE id = $1)`, *comment.ThreadID).Scan(&exists)
+		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM threads WHERE id = $1)`, *comment.ThreadID).Scan(&exists)
 		if err != nil {
 			return nil, err
 		}
 		if !exists {
-			// Create the thread automatically
-			_, err := r.db.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, *comment.ThreadID)
-			if err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO threads (id) VALUES ($1)`, *comment.ThreadID); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	// 2. Assign ID and timestamps for the comment
 	comment.ID = uuid.New().String()
 	now := time.Now()
 	comment.CreatedAt = now
 	comment.UpdatedAt = now
 
-	// 3. Insert the comment
-	_, err := r.db.Exec(ctx,
-		`INSERT INTO comments
-            (id, author_id, content, thread_id, answer_comment_id, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+	_, err = tx.Exec(ctx, `
+		INSERT INTO comments
+			(id, author_id, content, thread_id, answer_comment_id, is_pinned, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`,
 		comment.ID,
 		comment.AuthorID,
 		comment.Content,
 		comment.ThreadID,
 		comment.AnswerCommentID,
+		comment.IsPinned,
 		comment.CreatedAt,
 		comment.UpdatedAt,
 	)
@@ -81,18 +194,24 @@ func (r *CommentRepo) Create(ctx context.Context, comment *model.Comment) (*mode
 		return nil, err
 	}
 
+	if err := r.saveMedia(ctx, tx, comment.ID, comment.Documents); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
 	return comment, nil
 }
 
-// GetByID возвращает комментарий по thread_id
 func (r *CommentRepo) GetByID(ctx context.Context, threadID string) (*model.Comment, error) {
-	query := `
-        SELECT id, author_id, content, thread_id, created_at, updated_at
-        FROM comments
-        WHERE thread_id = $1 AND deleted_at IS NULL
-        ORDER BY created_at ASC
-    `
-	rows, err := r.db.Query(ctx, query, threadID)
+	rows, err := r.db.Query(ctx, `
+		SELECT id, author_id, content, thread_id, answer_comment_id, is_pinned, status, created_at, updated_at
+		FROM comments
+		WHERE thread_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at ASC
+	`, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,41 +219,47 @@ func (r *CommentRepo) GetByID(ctx context.Context, threadID string) (*model.Comm
 
 	var comments []model.Comment
 	for rows.Next() {
-		var c model.Comment
-		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Content, &c.ThreadID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		var comment model.Comment
+		if err := rows.Scan(&comment.ID, &comment.AuthorID, &comment.Content, &comment.ThreadID, &comment.AnswerCommentID, &comment.IsPinned, &comment.Status, &comment.CreatedAt, &comment.UpdatedAt); err != nil {
 			return nil, err
 		}
-		c.Replies = []model.Comment{}
-		c.RepliesCount = 0 // initialize
-		comments = append(comments, c)
+		comment.Replies = []model.Comment{}
+		comment.Documents = []model.CommentMedia{}
+		comments = append(comments, comment)
 	}
 
 	if len(comments) == 0 {
-		return nil, nil // no comments for this thread
+		return nil, nil
 	}
 
-	// First one (oldest) is root
-	root := comments[0]
+	mediaMap, err := r.loadMediaMap(ctx, collectCommentIDs(comments))
+	if err != nil {
+		return nil, err
+	}
+	comments = assignMediaToComments(comments, mediaMap)
 
-	// Replies are everything after the root
+	root := comments[0]
 	if len(comments) > 1 {
 		root.Replies = comments[1:]
+		sort.SliceStable(root.Replies, func(i, j int) bool {
+			if root.Replies[i].IsPinned != root.Replies[j].IsPinned {
+				return root.Replies[i].IsPinned
+			}
+			return root.Replies[i].CreatedAt.Before(root.Replies[j].CreatedAt)
+		})
 		root.RepliesCount = len(comments) - 1
 	}
 
 	return &root, nil
 }
 
-// Update обновляет комментарий
 func (r *CommentRepo) Update(ctx context.Context, id string, content string, authorId string) (*model.Comment, error) {
-	// Проверяем существование комментария и авторство
 	var dbAuthor string
 	err := r.db.QueryRow(ctx, `
-        SELECT author_id 
-        FROM comments 
-        WHERE id = $1
-    `, id).Scan(&dbAuthor)
-
+		SELECT author_id
+		FROM comments
+		WHERE id = $1
+	`, id).Scan(&dbAuthor)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("comment with ID %s not found", id)
@@ -146,19 +271,20 @@ func (r *CommentRepo) Update(ctx context.Context, id string, content string, aut
 		return nil, fmt.Errorf("only the author can edit this comment")
 	}
 
-	// Обновляем только content и сразу возвращаем полный комментарий
 	updatedComment := &model.Comment{}
 	err = r.db.QueryRow(ctx, `
-        UPDATE comments
-        SET content = $1, status = $2, updated_at = $3
-        WHERE id = $4
-        RETURNING id, content, author_id, status, thread_id, created_at, updated_at
-    `, content, model.CommentStatusEdited, time.Now(), id).Scan(
+		UPDATE comments
+		SET content = $1, status = $2, updated_at = $3
+		WHERE id = $4
+		RETURNING id, content, author_id, is_pinned, status, thread_id, answer_comment_id, created_at, updated_at
+	`, content, model.CommentStatusEdited, time.Now(), id).Scan(
 		&updatedComment.ID,
 		&updatedComment.Content,
 		&updatedComment.AuthorID,
+		&updatedComment.IsPinned,
 		&updatedComment.Status,
 		&updatedComment.ThreadID,
+		&updatedComment.AnswerCommentID,
 		&updatedComment.CreatedAt,
 		&updatedComment.UpdatedAt,
 	)
@@ -166,10 +292,15 @@ func (r *CommentRepo) Update(ctx context.Context, id string, content string, aut
 		return nil, err
 	}
 
+	mediaMap, err := r.loadMediaMap(ctx, []string{updatedComment.ID})
+	if err != nil {
+		return nil, err
+	}
+	updatedComment.Documents = mediaMap[updatedComment.ID]
+
 	return updatedComment, nil
 }
 
-// Delete удаляет комментарий и возвращает его после удаления
 func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*model.Comment, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -180,8 +311,8 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 	var dbAuthor string
 	var threadID *string
 	err = tx.QueryRow(ctx, `
-		SELECT author_id, thread_id 
-		FROM comments 
+		SELECT author_id, thread_id
+		FROM comments
 		WHERE id = $1
 	`, id).Scan(&dbAuthor, &threadID)
 	if err != nil {
@@ -212,12 +343,11 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		return nil, errors.New("only the comment author or thread author can delete this comment")
 	}
 
-	_, err = tx.Exec(ctx, `
+	if _, err := tx.Exec(ctx, `
 		UPDATE comments
 		SET deleted_at = NOW(), status = 'deleted', updated_at = NOW()
 		WHERE id = $1
-	`, id)
-	if err != nil {
+	`, id); err != nil {
 		return nil, err
 	}
 
@@ -235,12 +365,11 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 
 		if firstCommentID == id {
 			isFirstComment = true
-			_, err = tx.Exec(ctx, `
+			if _, err := tx.Exec(ctx, `
 				UPDATE comments
 				SET deleted_at = NOW(), status = 'deleted', updated_at = NOW()
 				WHERE thread_id = $1
-			`, *threadID)
-			if err != nil {
+			`, *threadID); err != nil {
 				return nil, err
 			}
 		}
@@ -248,7 +377,7 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 
 	var deletedComment model.Comment
 	err = tx.QueryRow(ctx, `
-		SELECT id, thread_id, content, author_id, status, created_at, updated_at
+		SELECT id, thread_id, content, author_id, answer_comment_id, status, created_at, updated_at, is_pinned
 		FROM comments
 		WHERE id = $1
 	`, id).Scan(
@@ -256,9 +385,11 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		&deletedComment.ThreadID,
 		&deletedComment.Content,
 		&deletedComment.AuthorID,
+		&deletedComment.AnswerCommentID,
 		&deletedComment.Status,
 		&deletedComment.CreatedAt,
 		&deletedComment.UpdatedAt,
+		&deletedComment.IsPinned,
 	)
 	if err != nil {
 		return nil, err
@@ -268,9 +399,62 @@ func (r *CommentRepo) Delete(ctx context.Context, id string, authorId string) (*
 		return nil, err
 	}
 
+	mediaMap, err := r.loadMediaMap(ctx, []string{deletedComment.ID})
+	if err != nil {
+		return nil, err
+	}
+	deletedComment.Documents = mediaMap[deletedComment.ID]
 	deletedComment.IsFirstComment = isFirstComment
 
 	return &deletedComment, nil
+}
+
+func (r *CommentRepo) SetPinned(ctx context.Context, id string, authorId string, isPinned bool) (*model.Comment, error) {
+	var dbAuthor string
+	err := r.db.QueryRow(ctx, `
+		SELECT author_id
+		FROM comments
+		WHERE id = $1 AND deleted_at IS NULL
+	`, id).Scan(&dbAuthor)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("comment with ID %s not found", id)
+		}
+		return nil, err
+	}
+
+	if dbAuthor != authorId {
+		return nil, fmt.Errorf("only the author can pin or unpin this comment")
+	}
+
+	item := &model.Comment{}
+	err = r.db.QueryRow(ctx, `
+		UPDATE comments
+		SET is_pinned = $1, updated_at = $2
+		WHERE id = $3
+		RETURNING id, author_id, content, thread_id, answer_comment_id, is_pinned, status, created_at, updated_at
+	`, isPinned, time.Now(), id).Scan(
+		&item.ID,
+		&item.AuthorID,
+		&item.Content,
+		&item.ThreadID,
+		&item.AnswerCommentID,
+		&item.IsPinned,
+		&item.Status,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	mediaMap, err := r.loadMediaMap(ctx, []string{item.ID})
+	if err != nil {
+		return nil, err
+	}
+	item.Documents = mediaMap[item.ID]
+
+	return item, nil
 }
 
 func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, replyLimit int) ([]model.Comment, error) {
@@ -278,57 +462,70 @@ func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, r
 		return nil, nil
 	}
 
-	query := `
-        SELECT id, author_id, content, thread_id, created_at, updated_at
-        FROM comments
-        WHERE thread_id = ANY($1) AND deleted_at IS NULL
-        ORDER BY created_at ASC
-    `
-	rows, err := r.db.Query(ctx, query, threadIDs)
+	rows, err := r.db.Query(ctx, `
+		SELECT id, author_id, content, thread_id, answer_comment_id, is_pinned, status, created_at, updated_at
+		FROM comments
+		WHERE thread_id = ANY($1) AND deleted_at IS NULL
+		ORDER BY created_at ASC
+	`, threadIDs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	threadComments := make(map[string][]model.Comment)
+	var allComments []model.Comment
 
 	for rows.Next() {
-		var c model.Comment
-		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Content, &c.ThreadID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		var comment model.Comment
+		if err := rows.Scan(&comment.ID, &comment.AuthorID, &comment.Content, &comment.ThreadID, &comment.AnswerCommentID, &comment.IsPinned, &comment.Status, &comment.CreatedAt, &comment.UpdatedAt); err != nil {
 			return nil, err
 		}
-		c.Replies = []model.Comment{}
-		if c.ThreadID != nil {
-			threadComments[*c.ThreadID] = append(threadComments[*c.ThreadID], c)
+		comment.Replies = []model.Comment{}
+		comment.Documents = []model.CommentMedia{}
+		if comment.ThreadID != nil {
+			threadComments[*comment.ThreadID] = append(threadComments[*comment.ThreadID], comment)
 		}
+		allComments = append(allComments, comment)
+	}
+
+	mediaMap, err := r.loadMediaMap(ctx, collectCommentIDs(allComments))
+	if err != nil {
+		return nil, err
 	}
 
 	var result []model.Comment
-
 	for _, comments := range threadComments {
 		if len(comments) == 0 {
 			continue
 		}
 
+		comments = assignMediaToComments(comments, mediaMap)
 		root := comments[0]
-
 		totalReplies := len(comments) - 1
 		root.RepliesCount = totalReplies
 
-		if replyLimit <= 0 || totalReplies <= 0 {
-			root.Replies = []model.Comment{}
-		} else {
-			start := len(comments) - replyLimit
-			if start < 1 {
-				start = 1
+		if replyLimit > 0 && totalReplies > 0 {
+			replies := append([]model.Comment(nil), comments[1:]...)
+			sort.SliceStable(replies, func(i, j int) bool {
+				if replies[i].IsPinned != replies[j].IsPinned {
+					return replies[i].IsPinned
+				}
+				return replies[i].CreatedAt.After(replies[j].CreatedAt)
+			})
+			if len(replies) > replyLimit {
+				replies = replies[:replyLimit]
 			}
-			root.Replies = comments[start:]
+			root.Replies = replies
 		}
 
 		result = append(result, root)
 	}
 
 	sort.Slice(result, func(i, j int) bool {
+		if result[i].IsPinned != result[j].IsPinned {
+			return result[i].IsPinned
+		}
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
 

@@ -36,6 +36,14 @@ func (s *CommentService) Delete(ctx context.Context, id string, authorId string)
 	return s.repo.Delete(ctx, id, authorId)
 }
 
+func (s *CommentService) Pin(ctx context.Context, id string, authorId string) (*model.Comment, error) {
+	return s.repo.SetPinned(ctx, id, authorId, true)
+}
+
+func (s *CommentService) Unpin(ctx context.Context, id string, authorId string) (*model.Comment, error) {
+	return s.repo.SetPinned(ctx, id, authorId, false)
+}
+
 // ListWithReplies возвращает root-комменты с ограничением replyLimit реплаев
 func (s *CommentService) ListWithReplies(ctx context.Context, ids []string, replyLimit int) ([]model.Comment, error) {
 	return s.repo.ListWithReplies(ctx, ids, replyLimit)
