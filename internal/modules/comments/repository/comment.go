@@ -242,10 +242,7 @@ func (r *CommentRepo) GetByID(ctx context.Context, threadID string) (*model.Comm
 	if len(comments) > 1 {
 		root.Replies = comments[1:]
 		sort.SliceStable(root.Replies, func(i, j int) bool {
-			if root.Replies[i].IsPinned != root.Replies[j].IsPinned {
-				return root.Replies[i].IsPinned
-			}
-			return root.Replies[i].CreatedAt.Before(root.Replies[j].CreatedAt)
+			return commentComesFirst(root.Replies[i], root.Replies[j], true)
 		})
 		root.RepliesCount = len(comments) - 1
 	}
@@ -508,10 +505,7 @@ func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, r
 		if replyLimit > 0 && totalReplies > 0 {
 			replies := append([]model.Comment(nil), comments[1:]...)
 			sort.SliceStable(replies, func(i, j int) bool {
-				if replies[i].IsPinned != replies[j].IsPinned {
-					return replies[i].IsPinned
-				}
-				return replies[i].CreatedAt.After(replies[j].CreatedAt)
+				return commentComesFirst(replies[i], replies[j], false)
 			})
 			if len(replies) > replyLimit {
 				replies = replies[:replyLimit]
@@ -523,10 +517,7 @@ func (r *CommentRepo) ListWithReplies(ctx context.Context, threadIDs []string, r
 	}
 
 	sort.Slice(result, func(i, j int) bool {
-		if result[i].IsPinned != result[j].IsPinned {
-			return result[i].IsPinned
-		}
-		return result[i].CreatedAt.After(result[j].CreatedAt)
+		return commentComesFirst(result[i], result[j], false)
 	})
 
 	return result, nil
