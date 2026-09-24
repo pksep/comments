@@ -28,3 +28,9 @@ COPY --from=builder /app/.env ./.env
 
 # Если у комментариев есть свои миграции
 COPY --from=builder /app/migrations ./migrations
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["./comments_server"]
