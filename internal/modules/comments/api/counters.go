@@ -45,7 +45,7 @@ func (h *CommentHandler) Counters(c *gin.Context) {
 		}
 	}
 
-	items, err := h.service.Counters(c.Request.Context(), body.UserID, body.ThreadIDs, body.MarkRead)
+	items, err := h.service.Counters(c.Request.Context(), strconv.FormatInt(userID, 10), body.ThreadIDs, body.MarkRead)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "comment counters unavailable"})
 		return

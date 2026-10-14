@@ -42,6 +42,10 @@ func TestCounterGateway(t *testing.T) {
 	}{
 		{"read", key, true, counterRequest{UserID: "7", ThreadIDs: []string{threadID}}, 200},
 		{"mark", key, true, counterRequest{UserID: "7", ThreadIDs: []string{threadID}, MarkRead: true}, 200},
+		{"read_leading_zeroes", key, true, counterRequest{UserID: "007", ThreadIDs: []string{threadID}}, 200},
+		{"mark_leading_zeroes", key, true, counterRequest{UserID: "007", ThreadIDs: []string{threadID}, MarkRead: true}, 200},
+		{"read_explicit_plus", key, true, counterRequest{UserID: "+7", ThreadIDs: []string{threadID}}, 200},
+		{"mark_explicit_plus", key, true, counterRequest{UserID: "+7", ThreadIDs: []string{threadID}, MarkRead: true}, 200},
 		{"missing_key", "", true, counterRequest{UserID: "7", ThreadIDs: []string{threadID}}, 401},
 		{"wrong_key", "incorrect", true, counterRequest{UserID: "7", ThreadIDs: []string{threadID}}, 401},
 		{"not_configured", key, false, counterRequest{UserID: "7", ThreadIDs: []string{threadID}}, 503},
