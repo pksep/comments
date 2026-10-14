@@ -18,6 +18,7 @@ import (
 )
 
 type CommentRepoInterface interface {
+	Counters(ctx context.Context, userID string, threadIDs []string, markRead bool) ([]model.ThreadCounter, error)
 	Create(ctx context.Context, comment *model.Comment) (*model.Comment, error)
 	GetByID(ctx context.Context, threadId string) (*model.Comment, error)
 	Update(ctx context.Context, id string, content string, authorId string) (*model.Comment, error)

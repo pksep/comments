@@ -11,6 +11,11 @@ type CommentService struct {
 	repo repository.CommentRepoInterface
 }
 
+// Counters does not load contents, attachments or reply trees.
+func (s *CommentService) Counters(ctx context.Context, userID string, threadIDs []string, markRead bool) ([]model.ThreadCounter, error) {
+	return s.repo.Counters(ctx, userID, threadIDs, markRead)
+}
+
 // NewCommentService создаёт новый сервис комментариев
 func NewCommentService(repo repository.CommentRepoInterface) *CommentService {
 	return &CommentService{repo: repo}
