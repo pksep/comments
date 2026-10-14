@@ -26,6 +26,7 @@ func (h *CommentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		comments.POST("/delete", h.Delete) // id, author_id будет в теле
 		comments.POST("/pin", h.Pin)
 		comments.POST("/unpin", h.Unpin)
+		comments.POST("/counters", h.Counters)
 		comments.GET("/by-thread/:threadId", h.Get)
 		comments.GET("/list", h.List) // ids[]=id1&ids[]=id2
 	}
